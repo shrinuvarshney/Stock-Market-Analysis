@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Market Analysis with AI Insights</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom styles to complement Tailwind */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Dark background */
+            color: #d1d5db; /* Light gray text */
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+        }
+        .card {
+            background-color: #1f2937;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            border: 1px solid #374151;
+        }
+        .metric-value {
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        .metric-label {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .gemini-button {
+            background: linear-gradient(90deg, #4f46e5, #c026d3);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8">
+
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-white">Stock Market Analysis</h1>
+            <p class="text-lg text-gray-400 mt-2">Enter a company name to analyze its stock performance.</p>
+        </header>
+
+        <!-- Input Section -->
+        <div class="max-w-xl mx-auto mb-8 flex flex-col sm:flex-row gap-2">
+            <input type="text" id="tickerInput" class="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Try 'Apple', 'Microsoft', 'Reliance'..." value="Apple">
+            <button id="analyzeBtn" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">Analyze</button>
+        </div>
+
+        <!-- Main Content Area -->
+        <main id="results" class="hidden">
+            <!-- Ticker Information -->
+            <div id="tickerInfo" class="text-center mb-8">
+                <h2 id="companyName" class="text-3xl font-bold text-white"></h2>
+                <p id="companyTicker" class="text-xl text-gray-400"></p>
+            </div>
+            
+            <!-- Key Metrics -->
+            <div id="keyMetrics" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <!-- Metrics will be injected here by JavaScript -->
+            </div>
+
+            <!-- AI Analysis Section -->
+            <div class="mb-8">
+                <button id="geminiBtn" class="w-full gemini-button hover:opacity-90 text-white font-bold py-3 px-6 rounded-lg transition duration-300">✨ Generate AI Analysis</button>
+                <div id="aiAnalysisCard" class="card mt-4 hidden">
+                    <h3 class="text-xl font-semibold text-white mb-4">✨ AI-Powered Insights</h3>
+                    <div id="aiLoader" class="loader mx-auto"></div>
+                    <p id="aiAnalysisOutput" class="text-gray-300 whitespace-pre-wrap"></p>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="space-y-8">
+                <div class="card">
+                    <h3 class="text-xl font-semibold text-white mb-4">Price and Moving Averages</h3>
+                    <div class="chart-container">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="text-xl font-semibold text-white mb-4">Daily Returns</h3>
+                    <div class="chart-container">
+                        <canvas id="returnsChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="text-xl font-semibold text-white mb-4">Volatility (30-Day Rolling)</h3>
+                    <div class="chart-container">
+                        <canvas id="volatilityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Loader and Message Section -->
+        <div id="messageSection" class="text-center py-16">
+            <div id="loader" class="loader mx-auto hidden"></div>
+            <p id="messageText" class="text-gray-400 mt-4"></p>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Element References ---
+        const tickerInput = document.getElementById('tickerInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const geminiBtn = document.getElementById('geminiBtn');
+        const resultsSection = document.getElementById('results');
+        const messageSection = document.getElementById('messageSection');
+        const loader = document.getElementById('loader');
+        const messageText = document.getElementById('messageText');
+        const aiAnalysisCard = document.getElementById('aiAnalysisCard');
+        const aiLoader = document.getElementById('aiLoader');
+        const aiAnalysisOutput = document.getElementById('aiAnalysisOutput');
+        
+        // --- Chart instances and Data Cache ---
+        let priceChartInstance, returnsChartInstance, volatilityChartInstance;
+        let currentProcessedData = null;
+        let currentProfileData = null;
+
+        // --- Data Mappings ---
+        const tickerMap = {
+            'APPLE': 'AAPL', 'APPLE INC': 'AAPL', 'AAPL': 'AAPL',
+            'GOOGLE': 'GOOGL', 'ALPHABET': 'GOOGL', 'GOOGL': 'GOOGL',
+            'MICROSOFT': 'MSFT', 'MSFT': 'MSFT',
+            'AMAZON': 'AMZN', 'AMZN': 'AMZN',
+            'NVIDIA': 'NVDA', 'NVDA': 'NVDA',
+            'TESLA': 'TSLA', 'TSLA': 'TSLA',
+            'NETFLIX': 'NFLX', 'NFLX': 'NFLX',
+            'RELIANCE': 'RELIANCE', 'RELIANCE INDUSTRIES': 'RELIANCE',
+            'TCS': 'TCS', 'TATA CONSULTANCY SERVICES': 'TCS',
+            'INFOSYS': 'INFY', 'INFY': 'INFY',
+            'HDFC BANK': 'HDFCBANK', 'HDFCBANK': 'HDFCBANK', 'HDFC': 'HDFCBANK'
+        };
+        
+        // --- Event Listeners ---
+        analyzeBtn.addEventListener('click', handleAnalysis);
+        geminiBtn.addEventListener('click', handleAiAnalysis);
+        tickerInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                handleAnalysis();
+            }
+        });
+
+        // Load default ticker on page load
+        window.onload = () => {
+            if(tickerInput.value) {
+                handleAnalysis();
+            }
+        };
+
+        /**
+         * Main function to handle the analysis process.
+         * Now uses local sample data to avoid API errors.
+         */
+        async function handleAnalysis() {
+            const userInput = tickerInput.value.trim();
+            if (!userInput) {
+                showMessage('Please enter a company name or ticker.', 'error');
+                return;
+            }
+
+            const ticker = tickerMap[userInput.toUpperCase()];
+
+            showLoader(true);
+            resultsSection.classList.add('hidden');
+            aiAnalysisCard.classList.add('hidden');
+            aiAnalysisOutput.textContent = '';
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            try {
+                if (!ticker) {
+                    throw new Error(`Could not find data for "${userInput}". Please try a different name.`);
+                }
+                
+                const { historyData, profileData } = getSampleData(ticker);
+
+                currentProcessedData = processData(historyData['Time Series (Daily)']);
+                currentProfileData = profileData;
+                
+                displayProfile(currentProfileData);
+                displayKeyMetrics(currentProcessedData, currentProfileData);
+                createCharts(currentProcessedData);
+                
+                showLoader(false);
+                resultsSection.classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Analysis Error:', error);
+                showMessage(error.message, 'error');
+                showLoader(false);
+            }
+        }
+
+        /**
+         * Handles the AI analysis generation using the Gemini API.
+         */
+        async function handleAiAnalysis() {
+            if (!currentProcessedData || !currentProfileData) {
+                alert('Please analyze a stock first.');
+                return;
+            }
+
+            aiAnalysisCard.classList.remove('hidden');
+            aiLoader.classList.remove('hidden');
+            aiAnalysisOutput.textContent = '';
+            geminiBtn.disabled = true;
+
+            try {
+                const recentPrices = currentProcessedData.prices.slice(-60);
+                const recentReturns = currentProcessedData.returns.slice(-60);
+                const recentVolatility = currentProcessedData.volatility.slice(-60).filter(v => v !== null);
+                const avgVolatility = recentVolatility.reduce((a, b) => a + b, 0) / recentVolatility.length;
+                const currency = currentProfileData.Currency === 'INR' ? '₹' : '$';
+
+                const prompt = `
+                    Analyze the recent performance of the stock ${currentProfileData.Name} (${currentProfileData.Symbol}) based on the following data for the last 60 days.
+                    - The stock price started at ${currency}${recentPrices[0].toFixed(2)} and ended at ${currency}${recentPrices[recentPrices.length - 1].toFixed(2)}.
+                    - The average daily return was approximately ${(recentReturns.reduce((a, b) => a + b, 0) / recentReturns.length * 100).toFixed(2)}%.
+                    - The average 30-day rolling volatility has been around ${avgVolatility.toFixed(4)}.
+
+                    Provide a brief, easy-to-understand analysis covering three key areas:
+                    1.  **Recent Trend:** Describe the general price movement.
+                    2.  **Volatility Insight:** Explain what the volatility level suggests about the stock's risk.
+                    3.  **Potential Outlook:** Based purely on this data, give a neutral, data-driven potential outlook. Do not give financial advice.
+
+                    Keep the tone professional and accessible. Format the output clearly with headings.
+                `;
+
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // API key is handled by the environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
+                
+                const result = await response.json();
+                
+                if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    aiAnalysisOutput.textContent = result.candidates[0].content.parts[0].text;
+                } else {
+                    throw new Error('Received an empty or invalid response from the Gemini API.');
+                }
+
+            } catch (error) {
+                console.error('Gemini API Error:', error);
+                aiAnalysisOutput.textContent = `Error generating analysis: ${error.message}`;
+            } finally {
+                aiLoader.classList.add('hidden');
+                geminiBtn.disabled = false;
+            }
+        }
+        
+        /**
+         * Generates procedural historical data for a given starting price.
+         */
+        function generateHistory(startPrice) {
+            const history = {};
+            let lastClose = startPrice;
+            const today = new Date();
+            for (let i = 0; i < 300; i++) {
+                const date = new Date();
+                date.setDate(today.getDate() - i);
+                const dateString = date.toISOString().split('T')[0];
+                const changePercent = (Math.random() - 0.49) * 0.05;
+                const close = lastClose * (1 + changePercent);
+                history[dateString] = { "5. adjusted close": close.toFixed(4) };
+                lastClose = close;
+            }
+            return history;
+        }
+
+        /**
+         * Provides local sample data for a given ticker.
+         */
+        function getSampleData(ticker) {
+            let profileData, historyData;
+            
+            switch(ticker) {
+                case 'AAPL':
+                    profileData = { "Symbol": "AAPL", "Name": "Apple Inc", "Currency": "USD", "MarketCapitalization": "2814782331000", "52WeekHigh": "199.62", "52WeekLow": "164.08" };
+                    historyData = { "Time Series (Daily)": generateHistory(195.0) };
+                    break;
+                case 'GOOGL':
+                    profileData = { "Symbol": "GOOGL", "Name": "Alphabet Inc.", "Currency": "USD", "MarketCapitalization": "1760000000000", "52WeekHigh": "155.20", "52WeekLow": "115.83" };
+                    historyData = { "Time Series (Daily)": generateHistory(140.0) };
+                    break;
+                case 'MSFT':
+                    profileData = { "Symbol": "MSFT", "Name": "Microsoft Corporation", "Currency": "USD", "MarketCapitalization": "3120000000000", "52WeekHigh": "430.82", "52WeekLow": "309.49" };
+                    historyData = { "Time Series (Daily)": generateHistory(420.0) };
+                    break;
+                case 'AMZN':
+                    profileData = { "Symbol": "AMZN", "Name": "Amazon.com, Inc.", "Currency": "USD", "MarketCapitalization": "1900000000000", "52WeekHigh": "191.70", "52WeekLow": "118.35" };
+                    historyData = { "Time Series (Daily)": generateHistory(185.0) };
+                    break;
+                case 'NVDA':
+                    profileData = { "Symbol": "NVDA", "Name": "NVIDIA Corporation", "Currency": "USD", "MarketCapitalization": "3010000000000", "52WeekHigh": "125.59", "52WeekLow": "39.23" };
+                    historyData = { "Time Series (Daily)": generateHistory(120.0) };
+                    break;
+                case 'TSLA':
+                    profileData = { "Symbol": "TSLA", "Name": "Tesla, Inc.", "Currency": "USD", "MarketCapitalization": "582000000000", "52WeekHigh": "299.29", "52WeekLow": "138.80" };
+                    historyData = { "Time Series (Daily)": generateHistory(180.0) };
+                    break;
+                case 'NFLX':
+                    profileData = { "Symbol": "NFLX", "Name": "Netflix, Inc.", "Currency": "USD", "MarketCapitalization": "505700000000", "52WeekHigh": "1341.15", "52WeekLow": "587.04" };
+                    historyData = { "Time Series (Daily)": generateHistory(1170.0) };
+                    break;
+                case 'RELIANCE':
+                    profileData = { "Symbol": "RELIANCE.BSE", "Name": "Reliance Industries Ltd", "Currency": "INR", "MarketCapitalization": "18976580000000", "52WeekHigh": "1551.00", "52WeekLow": "1114.85" };
+                    historyData = { "Time Series (Daily)": generateHistory(1400.0) };
+                    break;
+                case 'TCS':
+                    profileData = { "Symbol": "TCS.BSE", "Name": "Tata Consultancy Services Ltd", "Currency": "INR", "MarketCapitalization": "11396620000000", "52WeekHigh": "4592.00", "52WeekLow": "3056.00" };
+                    historyData = { "Time Series (Daily)": generateHistory(3150.0) };
+                    break;
+                case 'INFY':
+                    profileData = { "Symbol": "INFY.BSE", "Name": "Infosys Ltd", "Currency": "INR", "MarketCapitalization": "6520000000000", "52WeekHigh": "2006.45", "52WeekLow": "1490.00" };
+                    historyData = { "Time Series (Daily)": generateHistory(1550.0) };
+                    break;
+                case 'HDFCBANK':
+                    profileData = { "Symbol": "HDFCBANK.BSE", "Name": "HDFC Bank Ltd", "Currency": "INR", "MarketCapitalization": "15442420000000", "52WeekHigh": "2038.00", "52WeekLow": "1593.00" };
+                    historyData = { "Time Series (Daily)": generateHistory(2010.0) };
+                    break;
+                default:
+                    return { historyData: null, profileData: null };
+            }
+            return { historyData, profileData };
+        }
+
+        /**
+         * Processes raw historical data to calculate metrics.
+         */
+        function processData(timeSeries) {
+            const dates = Object.keys(timeSeries).reverse();
+            const data = {
+                dates: [], prices: [], returns: [], ma50: [], ma200: [], volatility: [],
+            };
+
+            for (const date of dates) {
+                data.dates.push(date);
+                const adjClose = parseFloat(timeSeries[date]['5. adjusted close']);
+                data.prices.push(adjClose);
+            }
+
+            data.returns.push(0); 
+            for (let i = 1; i < data.prices.length; i++) {
+                data.returns.push((data.prices[i] - data.prices[i-1]) / data.prices[i-1]);
+            }
+
+            for (let i = 0; i < data.prices.length; i++) {
+                if (i >= 49) data.ma50.push(data.prices.slice(i - 49, i + 1).reduce((a, b) => a + b, 0) / 50);
+                else data.ma50.push(null);
+                if (i >= 199) data.ma200.push(data.prices.slice(i - 199, i + 1).reduce((a, b) => a + b, 0) / 200);
+                else data.ma200.push(null);
+            }
+
+            for (let i = 0; i < data.returns.length; i++) {
+                if (i >= 29) {
+                    const window = data.returns.slice(i - 29, i + 1);
+                    const mean = window.reduce((a, b) => a + b, 0) / 30;
+                    const variance = window.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / 30;
+                    data.volatility.push(Math.sqrt(variance));
+                } else {
+                    data.volatility.push(null);
+                }
+            }
+            return data;
+        }
+
+        function displayProfile(profile) {
+            document.getElementById('companyName').textContent = profile.Name || 'N/A';
+            document.getElementById('companyTicker').textContent = profile.Symbol || 'N/A';
+        }
+
+        function displayKeyMetrics(processedData, profile) {
+            const metricsContainer = document.getElementById('keyMetrics');
+            const latestPrice = processedData.prices[processedData.prices.length - 1];
+            const previousPrice = processedData.prices[processedData.prices.length - 2];
+            const change = latestPrice - previousPrice;
+            const changePercent = (change / previousPrice) * 100;
+            const currencySymbol = profile.Currency === 'INR' ? '₹' : '$';
+
+            const metrics = [
+                { label: 'Last Close Price', value: `${currencySymbol}${latestPrice.toFixed(2)}` },
+                { label: 'Day Change', value: `${change.toFixed(2)} (${changePercent.toFixed(2)}%)`, color: change >= 0 ? 'text-green-400' : 'text-red-400' },
+                { label: 'Market Cap', value: `${formatMarketCap(parseInt(profile.MarketCapitalization), currencySymbol)}` },
+                { label: '52-Week Range', value: `${profile['52WeekLow']} - ${profile['52WeekHigh']}` }
+            ];
+            metricsContainer.innerHTML = metrics.map(metric => `
+                <div class="card text-center">
+                    <p class="metric-label">${metric.label}</p>
+                    <p class="metric-value ${metric.color || 'text-white'}">${metric.value}</p>
+                </div>
+            `).join('');
+        }
+        
+        function formatMarketCap(num, currencySymbol) {
+            if (isNaN(num)) return 'N/A';
+            if (num >= 1e12) return `${currencySymbol}${(num / 1e12).toFixed(2)}T`;
+            if (num >= 1e9) return `${currencySymbol}${(num / 1e9).toFixed(1)}B`;
+            if (num >= 1e6) return `${currencySymbol}${(num / 1e6).toFixed(1)}M`;
+            return `${currencySymbol}${num}`;
+        }
+
+        function createCharts(data) {
+            if (priceChartInstance) priceChartInstance.destroy();
+            if (returnsChartInstance) returnsChartInstance.destroy();
+            if (volatilityChartInstance) volatilityChartInstance.destroy();
+            const commonOptions = {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { type: 'time', time: { unit: 'month' }, grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: '#9ca3af' } },
+                    y: { grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: '#9ca3af' } }
+                },
+                plugins: { legend: { labels: { color: '#d1d5db' } } },
+                interaction: { intersect: false, mode: 'index' },
+            };
+            priceChartInstance = new Chart(document.getElementById('priceChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: [
+                        { label: 'Adjusted Close Price', data: data.prices, borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                        { label: '50-Day MA', data: data.ma50, borderColor: '#f97316', borderWidth: 1.5, pointRadius: 0, borderDash: [5, 5] },
+                        { label: '200-Day MA', data: data.ma200, borderColor: '#ef4444', borderWidth: 1.5, pointRadius: 0 }
+                    ]
+                },
+                options: commonOptions
+            });
+            returnsChartInstance = new Chart(document.getElementById('returnsChart'), {
+                type: 'bar',
+                data: { labels: data.dates, datasets: [{ label: 'Daily Return', data: data.returns, backgroundColor: data.returns.map(r => r >= 0 ? 'rgba(34, 197, 94, 0.7)' : 'rgba(239, 68, 68, 0.7)') }] },
+                options: { ...commonOptions, plugins: { legend: { display: false } } }
+            });
+            volatilityChartInstance = new Chart(document.getElementById('volatilityChart'), {
+                type: 'line',
+                data: { labels: data.dates, datasets: [{ label: '30-Day Rolling Volatility', data: data.volatility, borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, borderWidth: 2, pointRadius: 0, tension: 0.1 }] },
+                options: commonOptions
+            });
+        }
+
+        function showLoader(isLoading) {
+            if (isLoading) {
+                loader.classList.remove('hidden');
+                messageText.textContent = 'Analyzing local data...';
+                messageSection.classList.remove('hidden');
+            } else {
+                loader.classList.add('hidden');
+                messageSection.classList.add('hidden');
+            }
+        }
+
+        function showMessage(msg, type = 'info') {
+            messageText.textContent = msg;
+            messageText.style.color = type === 'error' ? '#f87171' : '#9ca3af';
+            messageSection.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
