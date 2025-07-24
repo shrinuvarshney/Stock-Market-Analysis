@@ -6,6 +6,12 @@ This dashboard allows users to input a company name or stock ticker and instantl
 
 ---
 
+## 🌐 Live Demo
+
+👉 [Click here to try it out](https://shrinuvarshney.github.io/Stock-Market-Analysis/)
+
+---
+
 ## ✨ Features
 
 - **🔍 Intuitive Search**  
